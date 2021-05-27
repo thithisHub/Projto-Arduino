@@ -4,7 +4,7 @@
 #include <PubSubClient.h>
 #include "SoftwareSerial.h"
  
-SoftwareSerial Serial1(2, 3);
+SoftwareSerial Serial1(2, 3);//estabelecendo comunicaçao seria com o ESP
 
 bool leituraSensor;
 bool leituraAnterior;
@@ -24,10 +24,10 @@ void setup() {
   Serial.begin(9600);
   Serial1.begin(9600);
   
-  //Sensor
+  //Sensor de umidade
   pinMode(8, INPUT);
 
-  //Atuador
+  //Atuador relé
   pinMode(12, OUTPUT);
 
   WiFi.init(&Serial1); //define o serial criado como sendo o canal para o serial do wifi
@@ -46,7 +46,6 @@ void setup() {
 void configuraMqtt() 
 {
     MQTT.setServer(endereco_broker, porta_broker);   //informa qual broker e porta deve ser conectado
-    MQTT.setCallback(recebeMensagemBroker); //define handler para infos recebidas do broker
     delay(5000);//espera para testar conexão, as vezes o wifi demora um pouco e da falha na primeira, então achamos melhor esperar (parou de falhar)
     while (!MQTT.connected()) 
     {
@@ -64,18 +63,6 @@ void configuraMqtt()
     } 
 }
 
-void recebeMensagemBroker(char* canal, byte* dados, unsigned int tamanho_msg) 
-{
-  String msg;
-
-  //obtem a string do payload recebido
-  for(int i = 0; i < tamanho_msg; i++) 
-  {
-     char c = (char)dados[i];
-     msg += c;
-  }
-  //se fossemos implementar alguma ação para um comando recebido por mqtt (tipo forçar irrigação) seria aqui
-}
 
 void publicaMensagemBroker(String mensagem)
 { 
@@ -93,35 +80,34 @@ void loop() {
 
   MQTT.loop();//manda o sinal de keep-alive para o broker nao encerrar a conexão
 
-  leituraSensor = digitalRead(8);
+  leituraSensor = digitalRead(8);// lendo sinal emitido pelo sensor de umidade
 
-  if (leituraSensor == HIGH) {
+  if (leituraSensor == HIGH) {// se o sinal for high significa que a terra esta seca
      //No estado seco
-     digitalWrite(5, HIGH);  //vermelho
-     digitalWrite(7, LOW);   //verde
+     digitalWrite(5, HIGH);  //acende vermelho
+     digitalWrite(7, LOW);   // apaga verde
      publicaMensagemBroker("Leitura: Terra Seca"); //informa ao broker que a terra foi lida como seca
-  } else {
+  } else {// se o sinal for low significa que a terra esta umida
      //No estado úmido
-     digitalWrite(5, LOW);   //vermelho
-     digitalWrite(7, HIGH);  //verde
+     digitalWrite(5, LOW);   //apaga vermelho
+     digitalWrite(7, HIGH);  // acende verde
      publicaMensagemBroker("Leitura: Terra molhada"); //informa ao broker que a terra foi lida como mollhada
   }
 
   //Ao entrar no estado seco  
-  if (leituraSensor && !leituraAnterior) {
+  if (leituraSensor == HIGH && leituraAnterior == LOW) {// se o estado atual for seco e o anterior for molhado , entra no modo de irrigaçao
      delay(5000);
-     digitalWrite(5, LOW);   //vermelho
-     digitalWrite(6, HIGH);  //amarelo
+     digitalWrite(5, LOW);   //apaga vermelho
+     digitalWrite(6, HIGH);  //acende amarelo
 
-     while (digitalRead(8)) {
-        digitalWrite(12, HIGH);   //rele / válvula / solenoide / bomba
-        delay(500);
-        digitalWrite(12, LOW);   //rele / válvula / solenoide / bomba
+     while (digitalRead(8)) {// em quanto o sensor de umidade enviar o sinal de seco , irrigue
+        digitalWrite(12, HIGH);//ativa a bomba de agua
+        delay(500);// mantem ela ligada durante o periodo estipulado
+        digitalWrite(12, LOW);//desliga a bomba
         publicaMensagemBroker("Ação: Irrigando");//informa ao broker que a ação de irrigar foi tomada
-        delay(10000);          
+        delay(10000);// aguarda 10 sec para prox leitura de sensor          
      }
-     digitalWrite(6, LOW);  //amarelo
+     digitalWrite(6, LOW);  //saindo do laço de irrigaçao , apaga o led amarelo
   }
   
-  leituraAnterior = leituraSensor;
 }
